@@ -1,101 +1,81 @@
-// myframework.go
+// prishthbhagah.go
 package prishthbhagah
 
 import (
-	"encoding/json"
-	"html/template"
-	"log"
-	"net/http"
-	// "path/filepath"
-	"strings"
+    "encoding/json"
+    "net/http"
+    "path/filepath"
+    "strings"
 )
 
-type HandlerFunc func(http.ResponseWriter, *http.Request)
+type HandlerFunc func(http.ResponseWriter, *http.Request, map[string]string)
 
-type App struct {
-	routes map[string]map[string]HandlerFunc
+type Router struct {
+    routes map[string]map[string]HandlerFunc // Method -> Path -> HandlerFunc
 }
 
-func NewApp() *App {
-	return &App{
-		routes: make(map[string]map[string]HandlerFunc),
-	}
+func NewRouter() *Router {
+    return &Router{routes: make(map[string]map[string]HandlerFunc)}
 }
 
-func (app *App) Get(path string, handler HandlerFunc) {
-	if app.routes[path] == nil {
-		app.routes[path] = make(map[string]HandlerFunc)
-	}
-	app.routes[path]["GET"] = handler
+func (r *Router) Handle(method, path string, handler HandlerFunc) {
+    if r.routes[method] == nil {
+        r.routes[method] = make(map[string]HandlerFunc)
+    }
+    r.routes[method][path] = handler
 }
 
-func (app *App) Post(path string, handler HandlerFunc) {
-	if app.routes[path] == nil {
-		app.routes[path] = make(map[string]HandlerFunc)
-	}
-	app.routes[path]["POST"] = handler
+func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+    path := req.URL.Path
+    method := req.Method
+
+    for routePath, handler := range r.routes[method] {
+        if routePath == path {
+            handler(w, req, nil)
+            return
+        }
+
+        if strings.Contains(routePath, ":") {
+            parts := strings.Split(routePath, "/")
+            reqParts := strings.Split(path, "/")
+
+            if len(parts) != len(reqParts) {
+                continue
+            }
+
+            params := make(map[string]string)
+            match := true
+
+            for i, part := range parts {
+                if strings.HasPrefix(part, ":") {
+                    paramName := strings.TrimPrefix(part, ":")
+                    params[paramName] = reqParts[i]
+                } else if part != reqParts[i] {
+                    match = false
+                    break
+                }
+            }
+
+            if match {
+                handler(w, req, params)
+                return
+            }
+        }
+    }
+
+    http.NotFound(w, req)
 }
 
-func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	urlPath := r.URL.Path
-	if strings.HasSuffix(urlPath, "/") {
-		urlPath = urlPath[:len(urlPath)-1]
-	}
-
-	for route, handlers := range app.routes {
-		if strings.HasPrefix(urlPath, route) {
-			handler := handlers[r.Method]
-			if handler != nil {
-				handler(w, r)
-				return
-			}
-		}
-	}
-	http.NotFound(w, r)
+func ServeFile(w http.ResponseWriter, req *http.Request, filePath string) {
+    http.ServeFile(w, req, filepath.Clean(filePath))
 }
 
-func Logger(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("%s %s %s", r.RemoteAddr, r.Method, r.URL)
-		next.ServeHTTP(w, r)
-	})
+func RespondJSON(w http.ResponseWriter, data interface{}, statusCode int) {
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(statusCode)
+    json.NewEncoder(w).Encode(data)
 }
 
-func RenderHTML(w http.ResponseWriter, filename string, data interface{}) {
-	tmpl, err := template.ParseFiles(filename)
-	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-	if err := tmpl.Execute(w, data); err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-}
-
-func JSON(w http.ResponseWriter, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-}
-
-func (app *App) Start(port string) error {
-	http.Handle("/", Logger(app))
-	return http.ListenAndServe(":"+port, nil)
-}
-
-func Params(r *http.Request) map[string]string {
-	params := make(map[string]string)
-	parts := strings.Split(r.URL.Path, "/")
-
-	for i := 0; i < len(parts); i++ {
-		if strings.HasPrefix(parts[i], ":") && i+1 < len(parts) {
-			paramName := strings.TrimPrefix(parts[i], ":")
-			params[paramName] = parts[i+1]
-		}
-	}
-
-	return params
+func StartServer(router *Router, port string) error {
+    return http.ListenAndServe(port, router)
 }

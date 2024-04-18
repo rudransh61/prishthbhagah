@@ -1,47 +1,43 @@
-// main.go
 package main
 
 import (
-	"fmt"
-	"prishthbhagah/prishthbhagah"
-	"net/http"
+    "fmt"
+    "prishthbhagah/prishthbhagah"
+    "net/http"
 )
 
 func main() {
-	app := prishthbhagah.NewApp()
+    router := prishthbhagah.NewRouter()
 
-	// GET request to render an HTML file
-	app.Get("/hello", func(w http.ResponseWriter, r *http.Request) {
-		prishthbhagah.RenderHTML(w, "hello.html", nil)
-	})
-
-	// GET request to respond with JSON
-	app.Get("/api/data", func(w http.ResponseWriter, r *http.Request) {
-		prishthbhagah.JSON(w, map[string]string{"message": "Data received successfully"})
-	})
-
-	// GET request with parameters
-	app.Get("/user/:id/:name", func(w http.ResponseWriter, r *http.Request) {
-        // Print URL path for debugging
-        fmt.Println("URL Path:", r.URL.Path)
-    
-        // Print parameters for debugging
-        params := prishthbhagah.Params(r)
-        fmt.Println("Parameters:", params)
-    
-        // Access parameters without colon prefix
-        userID := params["id"]
-        userName := params["name"]
-        prishthbhagah.JSON(w, map[string]string{"userID": userID, "userName": userName})
+    // Serve the index.html file
+    router.Handle("GET", "/", func(w http.ResponseWriter, req *http.Request, _ map[string]string) {
+        prishthbhagah.ServeFile(w, req, "./static/index.html")
     })
-    
 
-	// Start the server
-	port := "8080"
-	if err := app.Start(port); err != nil {
-		panic(err)
-	}
+    // Serve the form.html file
+    router.Handle("GET", "/form", func(w http.ResponseWriter, req *http.Request, _ map[string]string) {
+        prishthbhagah.ServeFile(w, req, "./static/form.html")
+    })
 
-	// Print server link
-	fmt.Printf("Server is listening on http://localhost:%s\n", port)
+    // Handle POST requests to /submit
+    router.Handle("POST", "/submit", func(w http.ResponseWriter, req *http.Request, _ map[string]string) {
+        err := req.ParseForm()
+        if err != nil {
+            http.Error(w, "Failed to parse form", http.StatusBadRequest)
+            return
+        }
+        name := req.Form.Get("name")
+        fmt.Fprintf(w, "Hello, %s! Your form was submitted successfully.", name)
+    })
+
+    // Handle GET requests with parameters
+    router.Handle("GET", "/hello/:name", func(w http.ResponseWriter, req *http.Request, params map[string]string) {
+        name := params["name"]
+        fmt.Fprintf(w, "Hello, %s!", name)
+    })
+
+    // Start server
+    if err := prishthbhagah.StartServer(router, ":8080"); err != nil {
+        panic(err)
+    }
 }
